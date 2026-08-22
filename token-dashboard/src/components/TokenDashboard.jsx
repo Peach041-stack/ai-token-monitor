@@ -8,6 +8,7 @@ import {
 import KPICards from './KPICards';
 import FilterControls from './FilterControls';
 import ChartSection from './ChartSection';
+import TokenHeatmap from './TokenHeatmap';
 import ModelDistribution from './ModelDistribution';
 import LiveTokenStream from './LiveTokenStream';
 import TokenTable from './TokenTable';
@@ -300,6 +301,9 @@ export default function TokenDashboard() {
           chartType={chartType}
           filterType={filterType}
         />
+
+        {/* ตาราง Activity Heatmap Grid สไตล์ GitHub */}
+        <TokenHeatmap rawData={rawData} />
 
         {/* ส่วนคู่: กราฟสัดส่วน (Distribution) และการตรวจจับแบบสด (Live Monitor) */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
