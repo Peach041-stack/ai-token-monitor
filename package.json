@@ -1,0 +1,43 @@
+{
+  "name": "ai-token-monitor",
+  "version": "1.0.0",
+  "description": "Real-time AI Token Observability, Cost Tracking & Quota Alerting Tool for Codex, Antigravity, and Claude",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts",
+    "dev:cli": "tsx src/index.ts",
+    "dashboard": "cd token-dashboard && npm run dev",
+    "server": "node token-dashboard/server.cjs",
+    "test": "vitest run || tsx src/index.ts --test",
+    "lint": "tsc --noEmit"
+  },
+  "keywords": [
+    "ai",
+    "token-counter",
+    "cost-tracking",
+    "llm-observability",
+    "openai",
+    "codex",
+    "anthropic",
+    "claude",
+    "gemini",
+    "antigravity",
+    "budget-alert"
+  ],
+  "author": "Peach041-stack <peachza041@gmail.com>",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  }
+}
