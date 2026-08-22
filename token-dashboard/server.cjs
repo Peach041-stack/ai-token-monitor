@@ -19,13 +19,52 @@ console.log('📁 Watching Antigravity:', ANTIGRAVITY_DIR);
 console.log('----------------------------------------------------');
 
 let dailyMap = {};
+let subModelStatsMap = {}; // สถิติแยกตามชื่อโมเดลย่อยละเอียด (e.g. GPT-5.6, Claude Opus 5, Gemini 2.5)
 let recentLiveEvents = [];
 const fileOffsets = new Map();
+const sessionModelCache = new Map(); // เก็บ mapping sessionId -> active model name
+
+// Normalize ชื่อโมเดลให้อ่านง่าย
+function normalizeModelName(rawModel, provider) {
+  if (!rawModel) return provider === 'Codex' ? 'GPT-5.6' : provider === 'ClaudeCowork' ? 'Claude 3.7 Sonnet' : 'Gemini 2.5 Flash';
+  const m = rawModel.toLowerCase();
+  if (m.includes('gpt-5.6')) return 'GPT-5.6';
+  if (m.includes('gpt-5.5')) return 'GPT-5.5';
+  if (m.includes('gpt-5.4')) return 'GPT-5.4';
+  if (m.includes('gpt-5')) return 'GPT-5';
+  if (m.includes('gpt-4o-mini')) return 'GPT-4o Mini';
+  if (m.includes('gpt-4o')) return 'GPT-4o';
+  if (m.includes('o3-mini')) return 'o3-mini';
+  if (m.includes('o3')) return 'o3';
+  if (m.includes('opus-5')) return 'Claude Opus 5';
+  if (m.includes('opus-4')) return 'Claude Opus 4.8';
+  if (m.includes('fable-5')) return 'Claude Fable 5';
+  if (m.includes('3-7-sonnet')) return 'Claude 3.7 Sonnet';
+  if (m.includes('3-5-sonnet')) return 'Claude 3.5 Sonnet';
+  if (m.includes('3-5-haiku')) return 'Claude 3.5 Haiku';
+  if (m.includes('gemini-3.0')) return 'Gemini 3.0 Flash';
+  if (m.includes('gemini-2.5-pro')) return 'Gemini 2.5 Pro';
+  if (m.includes('gemini-2.5-flash')) return 'Gemini 2.5 Flash';
+  if (m.includes('antigravity')) return 'Antigravity (Gemini)';
+  return rawModel;
+}
 
 function parseCodexLine(line, filename = '') {
-  if (!line.trim() || (!line.includes('token_usage') && !line.includes('token_count'))) return null;
+  if (!line.trim()) return null;
   try {
     const obj = JSON.parse(line);
+
+    // ตรวจหา Model จาก session_meta, world_state, หรือ turn_context
+    if (obj.type === 'world_state') {
+      const m = obj.payload?.state?.collaboration_mode?.model;
+      if (m && filename) sessionModelCache.set(filename, m);
+    }
+    if (obj.type === 'turn_context' && obj.payload?.model) {
+      if (filename) sessionModelCache.set(filename, obj.payload.model);
+    }
+
+    if (!line.includes('token_usage') && !line.includes('token_count')) return null;
+
     const info = obj.payload?.info;
     if (info?.last_token_usage || info?.total_token_usage) {
       const last = info.last_token_usage || info.total_token_usage;
@@ -36,10 +75,14 @@ function parseCodexLine(line, filename = '') {
       const total = inp + out + reas + cach;
       if (total === 0) return null;
 
+      const rawModel = info.model || info.model_name || sessionModelCache.get(filename) || 'gpt-5.6';
+      const cleanModel = normalizeModelName(rawModel, 'Codex');
       const dateStr = (obj.timestamp ? new Date(obj.timestamp) : new Date()).toISOString().split('T')[0];
+
       return {
         provider: 'Codex',
-        model: info.model || info.model_name || 'Codex',
+        model: cleanModel,
+        rawModel,
         inputTokens: inp,
         outputTokens: out,
         reasoningTokens: reas,
@@ -66,10 +109,14 @@ function parseClaudeLine(line) {
       const total = inp + out + cr;
       if (total === 0) return null;
 
+      const rawModel = obj.model || obj.message?.model || 'claude-opus-5';
+      const cleanModel = normalizeModelName(rawModel, 'ClaudeCowork');
       const dateStr = (obj.timestamp ? new Date(obj.timestamp) : new Date()).toISOString().split('T')[0];
+
       return {
         provider: 'ClaudeCowork',
-        model: obj.model || obj.message?.model || 'ClaudeCowork',
+        model: cleanModel,
+        rawModel,
         inputTokens: inp,
         outputTokens: out,
         cachedTokens: cr,
@@ -91,9 +138,11 @@ function parseAntigravityLine(line) {
       if (chars > 0) {
         const estTokens = Math.round(chars / 3.5);
         const dateStr = (obj.timestamp ? new Date(obj.timestamp) : new Date()).toISOString().split('T')[0];
+        const cleanModel = 'Gemini 3.0 Flash / Pro';
         return {
           provider: 'Antigravity',
-          model: 'Antigravity (Gemini)',
+          model: cleanModel,
+          rawModel: 'gemini-3.0',
           totalTokens: estTokens,
           outputTokens: estTokens,
           timestamp: obj.timestamp || new Date().toISOString(),
@@ -106,10 +155,12 @@ function parseAntigravityLine(line) {
 }
 
 function scanAllHistoricalData() {
-  console.log('🔄 Indexing historical sessions...');
+  console.log('🔄 Indexing historical sessions and sub-models...');
   dailyMap = {};
+  subModelStatsMap = {};
 
-  function addDaily(dateStr, provider, tokens) {
+  function addStats(dateStr, provider, modelName, tokens) {
+    // 1. Daily Map
     if (!dailyMap[dateStr]) {
       dailyMap[dateStr] = {
         date: dateStr,
@@ -121,6 +172,18 @@ function scanAllHistoricalData() {
     }
     dailyMap[dateStr][provider] += tokens;
     dailyMap[dateStr].total += tokens;
+
+    // 2. Sub-Model Stats Map
+    if (!subModelStatsMap[modelName]) {
+      subModelStatsMap[modelName] = {
+        modelName,
+        provider,
+        totalTokens: 0,
+        callCount: 0
+      };
+    }
+    subModelStatsMap[modelName].totalTokens += tokens;
+    subModelStatsMap[modelName].callCount += 1;
   }
 
   // 1. Scan Codex
@@ -138,7 +201,7 @@ function scanAllHistoricalData() {
               const lines = content.split('\n');
               for (const l of lines) {
                 const res = parseCodexLine(l, ent.name);
-                if (res) addDaily(res.dateStr, 'Codex', res.totalTokens);
+                if (res) addStats(res.dateStr, 'Codex', res.model, res.totalTokens);
               }
             } catch (e) {}
           }
@@ -163,7 +226,7 @@ function scanAllHistoricalData() {
               const lines = content.split('\n');
               for (const l of lines) {
                 const res = parseClaudeLine(l);
-                if (res) addDaily(res.dateStr, 'ClaudeCowork', res.totalTokens);
+                if (res) addStats(res.dateStr, 'ClaudeCowork', res.model, res.totalTokens);
               }
             } catch (e) {}
           }
@@ -188,7 +251,7 @@ function scanAllHistoricalData() {
               const lines = content.split('\n');
               for (const l of lines) {
                 const res = parseAntigravityLine(l);
-                if (res) addDaily(res.dateStr, 'Antigravity', res.totalTokens);
+                if (res) addStats(res.dateStr, 'Antigravity', res.model, res.totalTokens);
               }
             } catch (e) {}
           }
@@ -198,7 +261,7 @@ function scanAllHistoricalData() {
     walkAntigravity(ANTIGRAVITY_DIR);
   }
 
-  console.log(`✅ Indexed ${Object.keys(dailyMap).length} active days of usage!`);
+  console.log(`✅ Indexed ${Object.keys(dailyMap).length} active days & ${Object.keys(subModelStatsMap).length} unique sub-models!`);
 }
 
 function broadcastLiveEvent(evt) {
@@ -212,7 +275,13 @@ function broadcastLiveEvent(evt) {
   dailyMap[today][evt.provider] = (dailyMap[today][evt.provider] || 0) + evt.totalTokens;
   dailyMap[today].total += evt.totalTokens;
 
-  console.log(`⚡ [REAL-TIME TOKEN EVENT] ${evt.provider}: +${evt.totalTokens.toLocaleString()} tokens (${evt.model})`);
+  if (!subModelStatsMap[evt.model]) {
+    subModelStatsMap[evt.model] = { modelName: evt.model, provider: evt.provider, totalTokens: 0, callCount: 0 };
+  }
+  subModelStatsMap[evt.model].totalTokens += evt.totalTokens;
+  subModelStatsMap[evt.model].callCount += 1;
+
+  console.log(`⚡ [LIVE EVENT] ${evt.provider} (${evt.model}): +${evt.totalTokens.toLocaleString()} tokens`);
 
   const payload = `data: ${JSON.stringify(evt)}\n\n`;
   for (const client of clients) {
@@ -301,7 +370,14 @@ const server = http.createServer((req, res) => {
   if (url.pathname === '/api/tokens/history') {
     const sorted = Object.values(dailyMap).sort((a, b) => a.date.localeCompare(b.date));
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ success: true, count: sorted.length, data: sorted }));
+    res.end(JSON.stringify({ success: true, count: sorted.length, data: sorted, models: Object.values(subModelStatsMap) }));
+    return;
+  }
+
+  if (url.pathname === '/api/tokens/models') {
+    const modelsList = Object.values(subModelStatsMap).sort((a, b) => b.totalTokens - a.totalTokens);
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ success: true, count: modelsList.length, data: modelsList }));
     return;
   }
 
@@ -327,6 +403,7 @@ const server = http.createServer((req, res) => {
       port: PORT,
       clientsConnected: clients.size,
       totalDays: Object.keys(dailyMap).length,
+      subModelsTracked: Object.keys(subModelStatsMap).length,
       recentEvents: recentLiveEvents.slice(0, 5)
     }));
     return;
@@ -336,14 +413,11 @@ const server = http.createServer((req, res) => {
   res.end('Not Found');
 });
 
-// Robust Port Binding with Auto-Fallback
 function startServer(portToTry) {
   server.listen(portToTry, () => {
     PORT = portToTry;
     console.log(`🚀 Real-Time Token Server is running at http://localhost:${PORT}`);
     console.log(`📡 SSE Stream: http://localhost:${PORT}/api/tokens/live`);
-
-    // บันทึก Port ที่เปิดอยู่ลงไฟล์เพื่อให้ Frontend หรือ Client หาเจออัตโนมัติ
     try {
       const portFilePath = path.join(__dirname, '.active-port.json');
       fs.writeFileSync(portFilePath, JSON.stringify({ port: PORT, startedAt: new Date().toISOString() }), 'utf8');

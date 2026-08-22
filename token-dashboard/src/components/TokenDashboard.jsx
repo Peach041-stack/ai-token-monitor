@@ -10,6 +10,7 @@ import FilterControls from './FilterControls';
 import ChartSection from './ChartSection';
 import TokenHeatmap from './TokenHeatmap';
 import ModelDistribution from './ModelDistribution';
+import SubModelBreakdown from './SubModelBreakdown';
 import LiveTokenStream from './LiveTokenStream';
 import TokenTable from './TokenTable';
 
@@ -23,6 +24,7 @@ export default function TokenDashboard() {
 
   // ข้อมูลประวัติการใช้งาน
   const [rawData, setRawData] = useState([]);
+  const [subModelsList, setSubModelsList] = useState([]);
   const [liveEventsList, setLiveEventsList] = useState([]);
 
   // สถานะตัวกรองช่วงเวลา (daily | custom | monthly)
@@ -58,6 +60,7 @@ export default function TokenDashboard() {
         const json = await res.json();
         if (json.success && Array.isArray(json.data) && json.data.length > 0) {
           setRawData(json.data);
+          if (json.models) setSubModelsList(json.models);
           setServerOnline(true);
         } else {
           // หากไม่มีประวัติจริง ให้ fallback เป็น mock
@@ -75,6 +78,7 @@ export default function TokenDashboard() {
       setIsSyncing(false);
     }
   }, []);
+
 
   // เมื่อเปลี่ยน Data Source
   useEffect(() => {
@@ -314,6 +318,10 @@ export default function TokenDashboard() {
             isRealMode={dataSource === 'real'}
           />
         </div>
+
+        {/* ส่วนจำแนกตามชื่อโมเดลย่อย (Sub-Model Breakdown) */}
+        <SubModelBreakdown rawData={rawData} subModelsList={subModelsList} />
+
 
         {/* ตารางข้อมูลอย่างละเอียด พร้อมปุ่มดาวน์โหลดรายงาน CSV / JSON */}
         <TokenTable

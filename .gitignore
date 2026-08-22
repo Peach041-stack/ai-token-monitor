@@ -23,6 +23,8 @@ auth.json
 settings.json
 *.sqlite
 *.sqlite-*
+.active-port.json
+
 
 # Logs & Personal Sessions
 logs/
