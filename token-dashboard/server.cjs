@@ -3,13 +3,13 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const PORT = 3001;
+let PORT = parseInt(process.env.PORT || '3001', 10);
 const clients = new Set();
 
-// Paths
-const CODEX_DIR = path.join(os.homedir(), '.codex', 'sessions');
-const CLAUDE_DIR = path.join(os.homedir(), '.claude', 'projects');
-const ANTIGRAVITY_DIR = path.join(os.homedir(), '.gemini', 'antigravity', 'brain');
+// Dynamic OS-safe Paths
+const CODEX_DIR = process.env.CODEX_LOG_DIR || path.join(os.homedir(), '.codex', 'sessions');
+const CLAUDE_DIR = process.env.CLAUDE_LOG_DIR || path.join(os.homedir(), '.claude', 'projects');
+const ANTIGRAVITY_DIR = process.env.ANTIGRAVITY_LOG_DIR || path.join(os.homedir(), '.gemini', 'antigravity', 'brain');
 
 console.log('----------------------------------------------------');
 console.log('🤖 AI Token Real-Time Bridge Server Starting...');
@@ -18,7 +18,6 @@ console.log('📁 Watching Claude:', CLAUDE_DIR);
 console.log('📁 Watching Antigravity:', ANTIGRAVITY_DIR);
 console.log('----------------------------------------------------');
 
-// Cache สำหรับเก็บ State และ Daily Aggregate
 let dailyMap = {};
 let recentLiveEvents = [];
 const fileOffsets = new Map();
@@ -127,22 +126,24 @@ function scanAllHistoricalData() {
   // 1. Scan Codex
   if (fs.existsSync(CODEX_DIR)) {
     function walkCodex(dir) {
-      const entries = fs.readdirSync(dir, { withFileTypes: true });
-      for (const ent of entries) {
-        const full = path.join(dir, ent.name);
-        if (ent.isDirectory()) walkCodex(full);
-        else if (ent.name.endsWith('.jsonl')) {
-          try {
-            const content = fs.readFileSync(full, 'utf8');
-            fileOffsets.set(full, Buffer.byteLength(content, 'utf8'));
-            const lines = content.split('\n');
-            for (const l of lines) {
-              const res = parseCodexLine(l, ent.name);
-              if (res) addDaily(res.dateStr, 'Codex', res.totalTokens);
-            }
-          } catch (e) {}
+      try {
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const ent of entries) {
+          const full = path.join(dir, ent.name);
+          if (ent.isDirectory()) walkCodex(full);
+          else if (ent.name.endsWith('.jsonl')) {
+            try {
+              const content = fs.readFileSync(full, 'utf8');
+              fileOffsets.set(full, Buffer.byteLength(content, 'utf8'));
+              const lines = content.split('\n');
+              for (const l of lines) {
+                const res = parseCodexLine(l, ent.name);
+                if (res) addDaily(res.dateStr, 'Codex', res.totalTokens);
+              }
+            } catch (e) {}
+          }
         }
-      }
+      } catch (e) {}
     }
     walkCodex(CODEX_DIR);
   }
@@ -150,22 +151,24 @@ function scanAllHistoricalData() {
   // 2. Scan Claude
   if (fs.existsSync(CLAUDE_DIR)) {
     function walkClaude(dir) {
-      const entries = fs.readdirSync(dir, { withFileTypes: true });
-      for (const ent of entries) {
-        const full = path.join(dir, ent.name);
-        if (ent.isDirectory()) walkClaude(full);
-        else if (ent.name.endsWith('.jsonl')) {
-          try {
-            const content = fs.readFileSync(full, 'utf8');
-            fileOffsets.set(full, Buffer.byteLength(content, 'utf8'));
-            const lines = content.split('\n');
-            for (const l of lines) {
-              const res = parseClaudeLine(l);
-              if (res) addDaily(res.dateStr, 'ClaudeCowork', res.totalTokens);
-            }
-          } catch (e) {}
+      try {
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const ent of entries) {
+          const full = path.join(dir, ent.name);
+          if (ent.isDirectory()) walkClaude(full);
+          else if (ent.name.endsWith('.jsonl')) {
+            try {
+              const content = fs.readFileSync(full, 'utf8');
+              fileOffsets.set(full, Buffer.byteLength(content, 'utf8'));
+              const lines = content.split('\n');
+              for (const l of lines) {
+                const res = parseClaudeLine(l);
+                if (res) addDaily(res.dateStr, 'ClaudeCowork', res.totalTokens);
+              }
+            } catch (e) {}
+          }
         }
-      }
+      } catch (e) {}
     }
     walkClaude(CLAUDE_DIR);
   }
@@ -173,22 +176,24 @@ function scanAllHistoricalData() {
   // 3. Scan Antigravity
   if (fs.existsSync(ANTIGRAVITY_DIR)) {
     function walkAntigravity(dir) {
-      const entries = fs.readdirSync(dir, { withFileTypes: true });
-      for (const ent of entries) {
-        const full = path.join(dir, ent.name);
-        if (ent.isDirectory()) walkAntigravity(full);
-        else if (ent.name === 'transcript.jsonl') {
-          try {
-            const content = fs.readFileSync(full, 'utf8');
-            fileOffsets.set(full, Buffer.byteLength(content, 'utf8'));
-            const lines = content.split('\n');
-            for (const l of lines) {
-              const res = parseAntigravityLine(l);
-              if (res) addDaily(res.dateStr, 'Antigravity', res.totalTokens);
-            }
-          } catch (e) {}
+      try {
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const ent of entries) {
+          const full = path.join(dir, ent.name);
+          if (ent.isDirectory()) walkAntigravity(full);
+          else if (ent.name === 'transcript.jsonl') {
+            try {
+              const content = fs.readFileSync(full, 'utf8');
+              fileOffsets.set(full, Buffer.byteLength(content, 'utf8'));
+              const lines = content.split('\n');
+              for (const l of lines) {
+                const res = parseAntigravityLine(l);
+                if (res) addDaily(res.dateStr, 'Antigravity', res.totalTokens);
+              }
+            } catch (e) {}
+          }
         }
-      }
+      } catch (e) {}
     }
     walkAntigravity(ANTIGRAVITY_DIR);
   }
@@ -317,7 +322,13 @@ const server = http.createServer((req, res) => {
 
   if (url.pathname === '/api/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ status: 'ok', clientsConnected: clients.size, totalDays: Object.keys(dailyMap).length }));
+    res.end(JSON.stringify({
+      status: 'ok',
+      port: PORT,
+      clientsConnected: clients.size,
+      totalDays: Object.keys(dailyMap).length,
+      recentEvents: recentLiveEvents.slice(0, 5)
+    }));
     return;
   }
 
@@ -325,10 +336,32 @@ const server = http.createServer((req, res) => {
   res.end('Not Found');
 });
 
+// Robust Port Binding with Auto-Fallback
+function startServer(portToTry) {
+  server.listen(portToTry, () => {
+    PORT = portToTry;
+    console.log(`🚀 Real-Time Token Server is running at http://localhost:${PORT}`);
+    console.log(`📡 SSE Stream: http://localhost:${PORT}/api/tokens/live`);
+
+    // บันทึก Port ที่เปิดอยู่ลงไฟล์เพื่อให้ Frontend หรือ Client หาเจออัตโนมัติ
+    try {
+      const portFilePath = path.join(__dirname, '.active-port.json');
+      fs.writeFileSync(portFilePath, JSON.stringify({ port: PORT, startedAt: new Date().toISOString() }), 'utf8');
+    } catch (e) {}
+  });
+
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.warn(`⚠️ Port ${portToTry} is already in use. Retrying on port ${portToTry + 1}...`);
+      setTimeout(() => {
+        startServer(portToTry + 1);
+      }, 500);
+    } else {
+      console.error('Server error:', err);
+    }
+  });
+}
+
 scanAllHistoricalData();
 setupDirectoryWatchers();
-
-server.listen(PORT, () => {
-  console.log(`🚀 Real-Time Token Server is running at http://localhost:${PORT}`);
-  console.log(`📡 SSE Stream: http://localhost:${PORT}/api/tokens/live`);
-});
+startServer(PORT);

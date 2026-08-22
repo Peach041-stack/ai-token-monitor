@@ -6,7 +6,9 @@ import {
   DollarSign, 
   Cpu, 
   Award,
-  Activity
+  Activity,
+  Flame,
+  Radio
 } from 'lucide-react';
 
 export default function KPICards({ chartData, visibleModels }) {
@@ -26,6 +28,14 @@ export default function KPICards({ chartData, visibleModels }) {
 
   totals.grandTotal = totals.ClaudeCowork + totals.Codex + totals.Antigravity;
 
+  // หาข้อมูลของ "วันนี้"
+  const todayStr = new Date().toISOString().split('T')[0];
+  const todayRow = chartData.find((r) => r.date === todayStr) || chartData[chartData.length - 1] || {};
+  const todayClaude = visibleModels.ClaudeCowork ? (todayRow.ClaudeCowork || 0) : 0;
+  const todayCodex = visibleModels.Codex ? (todayRow.Codex || 0) : 0;
+  const todayAnti = visibleModels.Antigravity ? (todayRow.Antigravity || 0) : 0;
+  const todayTotal = todayClaude + todayCodex + todayAnti;
+
   // หาโมเดลที่ใช้งานสูงสุด
   const modelStats = [
     { key: 'ClaudeCowork', name: 'ClaudeCowork', val: totals.ClaudeCowork, color: MODEL_CONFIGS.ClaudeCowork.color },
@@ -37,9 +47,6 @@ export default function KPICards({ chartData, visibleModels }) {
     ? modelStats.reduce((prev, curr) => (curr.val > prev.val ? curr : prev), modelStats[0])
     : null;
 
-  // ค่าเฉลี่ยต่อหน่วยเวลา
-  const avgPerPeriod = chartData.length > 0 ? Math.round(totals.grandTotal / chartData.length) : 0;
-
   // ค่าใช้จ่ายประเมิน
   const cost = estimateCost(totals);
 
@@ -48,50 +55,55 @@ export default function KPICards({ chartData, visibleModels }) {
       {/* การ์ดสถิติภาพรวม 4 ใบ */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         
-        {/* Card 1: ยอดรวม Token ทั้งหมด */}
+        {/* Card 1: ยอดรวม Token ทั้งหมด (แสดง 3 หลักทศนิยมชัดเจน + เลขเต็ม) */}
         <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-slate-900/90 to-slate-950/90 border border-slate-800 p-5 shadow-xl backdrop-blur-md transition-all hover:border-slate-700">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-              ยอดรวม Token ที่ใช้
+              ยอดรวม Token สะสมทั้งหมด
             </span>
             <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20">
               <Zap className="w-5 h-5" />
             </div>
           </div>
           <div className="mt-3">
-            <div className="text-3xl font-extrabold text-white font-mono tracking-tight">
-              {formatTokens(totals.grandTotal)}
+            <div className="text-3xl font-extrabold text-white font-mono tracking-tight flex items-baseline gap-2">
+              <span>{formatTokens(totals.grandTotal)}</span>
             </div>
-            <p className="text-xs text-slate-400 mt-1 font-mono">
-              {totals.grandTotal.toLocaleString('th-TH')} Tokens
+            <p className="text-xs text-emerald-400 mt-1 font-mono font-medium">
+              {totals.grandTotal.toLocaleString('th-TH')} <span className="text-slate-400 font-sans">Tokens</span>
             </p>
           </div>
-          <div className="mt-4 flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
-            <Activity className="w-3.5 h-3.5" />
+          <div className="mt-4 flex items-center gap-1.5 text-xs text-slate-400">
+            <Activity className="w-3.5 h-3.5 text-blue-400" />
             <span>นับเฉพาะโมเดลที่เลือกแสดงผล</span>
           </div>
         </div>
 
-        {/* Card 2: ค่าเฉลี่ยต่อวัน/งวด */}
-        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-slate-900/90 to-slate-950/90 border border-slate-800 p-5 shadow-xl backdrop-blur-md transition-all hover:border-slate-700">
+        {/* Card 2: ยอดใช้งานของ "วันนี้" (Active Today) - เด้งสดทุกครั้งที่ Prompt! */}
+        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-slate-900/90 to-slate-950/90 border border-emerald-900/50 p-5 shadow-xl backdrop-blur-md transition-all hover:border-emerald-700/60">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-              ค่าเฉลี่ยต่อรอบ
+            <span className="text-xs font-semibold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              ยอดใช้งานวันนี้ (Today)
             </span>
-            <div className="p-2.5 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-              <TrendingUp className="w-5 h-5" />
+            <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <Flame className="w-5 h-5" />
             </div>
           </div>
           <div className="mt-3">
-            <div className="text-3xl font-extrabold text-white font-mono tracking-tight">
-              {formatTokens(avgPerPeriod)}
+            <div className="text-3xl font-extrabold text-emerald-400 font-mono tracking-tight animate-pulse">
+              {formatTokens(todayTotal)}
             </div>
-            <p className="text-xs text-slate-400 mt-1 font-mono">
-              ~{avgPerPeriod.toLocaleString('th-TH')} Tokens / ช่วง
+            <p className="text-xs text-slate-300 mt-1 font-mono">
+              {todayTotal.toLocaleString('th-TH')} Tokens วันนี้
             </p>
           </div>
-          <div className="mt-4 flex items-center gap-1.5 text-xs text-slate-400">
-            <span>คำนวณจาก {chartData.length} รายการข้อมูล</span>
+          <div className="mt-4 flex items-center gap-1.5 text-xs text-emerald-400/90 font-medium">
+            <Radio className="w-3.5 h-3.5 animate-spin" />
+            <span>อัปเดตสดทันทีเมื่อ Prompt</span>
           </div>
         </div>
 
@@ -191,7 +203,7 @@ export default function KPICards({ chartData, visibleModels }) {
               </div>
 
               <div className="mt-3 flex items-baseline justify-between border-t border-slate-800/80 pt-2.5">
-                <span className="text-xs text-slate-400">Tokens:</span>
+                <span className="text-xs text-slate-400">Tokens สะสม:</span>
                 <span className="font-mono font-bold text-slate-100 text-base">
                   {tokenCount.toLocaleString('th-TH')}
                 </span>

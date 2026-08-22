@@ -159,15 +159,16 @@ export function aggregateData(rawData, filterType, customStart, customEnd, daysL
 }
 
 /**
- * ฟอร์แมตตัวเลข Token ให้อ่านง่าย เช่น 1.25M, 450K, 12,500
+ * ฟอร์แมตตัวเลข Token ให้อ่านง่าย เช่น 4.702B, 156.74M, 450k, 12,500
  */
 export function formatTokens(num) {
   if (num === null || num === undefined || isNaN(num)) return '0';
-  if (num >= 1_000_000_000) return `${(num / 1_000_000_000).toFixed(2)}B`;
+  if (num >= 1_000_000_000) return `${(num / 1_000_000_000).toFixed(3)}B`;
   if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(2)}M`;
   if (num >= 1_000) return `${(num / 1_000).toFixed(1)}k`;
   return num.toLocaleString('th-TH');
 }
+
 
 /**
  * คำนวณราคาประเมินเป็นเงินบาท (THB) และดอลลาร์ (USD)
