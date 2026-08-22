@@ -1,0 +1,52 @@
+# Node & Dependency Directories
+node_modules/
+**/node_modules/
+.pnp
+.pnp.js
+
+# Build Outputs
+dist/
+build/
+**/dist/
+**/build/
+
+# Local Environment & Secrets (NEVER COMMIT CREDENTIALS)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.cert
+*.secret
+credentials.json
+auth.json
+settings.json
+*.sqlite
+*.sqlite-*
+
+# Logs & Personal Sessions
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+*.jsonl
+.codex/
+.claude/
+.gemini/
+
+# External Clones & Temporary Files
+codeburn/
+.tmp/
+*.tmp
+*.tmp-*
+.cache/
+.vscode/
+.idea/
+
+# OS Files
+.DS_Store
+Thumbs.db
+desktop.ini
