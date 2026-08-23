@@ -325,10 +325,12 @@ export default function TokenDashboard() {
 
         {/* ตารางข้อมูลอย่างละเอียด พร้อมปุ่มดาวน์โหลดรายงาน CSV / JSON */}
         <TokenTable
+          rawData={rawData}
           chartData={chartData}
           visibleModels={visibleModels}
           filterType={filterType}
         />
+
 
         {/* ส่วนท้าย (Footer) */}
         <footer className="pt-6 border-t border-slate-800/80 text-center text-xs text-slate-500 space-y-1">
