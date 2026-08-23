@@ -51,11 +51,18 @@ export default function TokenDashboard() {
   // ชนิดของกราฟ (line | bar | area)
   const [chartType, setChartType] = useState('line');
 
+  // ดึง API URL แบบ Dynamic ตาม .env (รองรับทั้งแบบต่อตรง และผ่าน Vite Proxy)
+  const API_BASE = useMemo(() => {
+    if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
+    if (typeof window !== 'undefined' && window.location.port === '5173') return '';
+    return 'http://localhost:3001';
+  }, []);
+
   // ฟังก์ชันโหลดข้อมูลจริงจาก Local Server
   const fetchRealHistory = useCallback(async () => {
     setIsSyncing(true);
     try {
-      const res = await fetch('http://localhost:3001/api/tokens/history');
+      const res = await fetch(`${API_BASE}/api/tokens/history`);
       if (res.ok) {
         const json = await res.json();
         if (json.success && Array.isArray(json.data) && json.data.length > 0) {
@@ -77,8 +84,7 @@ export default function TokenDashboard() {
     } finally {
       setIsSyncing(false);
     }
-  }, []);
-
+  }, [API_BASE]);
 
   // เมื่อเปลี่ยน Data Source
   useEffect(() => {
@@ -95,13 +101,14 @@ export default function TokenDashboard() {
 
     let eventSource = null;
     try {
-      eventSource = new EventSource('http://localhost:3001/api/tokens/live');
+      eventSource = new EventSource(`${API_BASE}/api/tokens/live`);
 
       eventSource.onopen = () => {
         setServerOnline(true);
       };
 
       eventSource.onmessage = (event) => {
+
         try {
           const data = JSON.parse(event.data);
           if (data.type === 'CONNECTED') return;
@@ -262,7 +269,8 @@ export default function TokenDashboard() {
                 ) : (
                   <>
                     <span className="w-2 h-2 rounded-full bg-amber-400" />
-                    <span className="text-amber-400 font-medium">รอเปิด server.js (Port 3001)</span>
+                    <span className="text-amber-400 font-medium">รอเปิด server.cjs (Port ใน .env)</span>
+
                   </>
                 )
               ) : (

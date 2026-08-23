@@ -3,6 +3,40 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
+// Helper to load .env file without external dependencies
+function loadEnvFile() {
+  const possiblePaths = [
+    path.join(__dirname, '.env'),
+    path.join(__dirname, '..', '.env'),
+    path.join(process.cwd(), '.env')
+  ];
+
+  for (const p of possiblePaths) {
+    if (fs.existsSync(p)) {
+      try {
+        const content = fs.readFileSync(p, 'utf8');
+        content.split('\n').forEach(line => {
+          const trimmed = line.trim();
+          if (trimmed && !trimmed.startsWith('#')) {
+            const idx = trimmed.indexOf('=');
+            if (idx > 0) {
+              const key = trimmed.slice(0, idx).trim();
+              const val = trimmed.slice(idx + 1).trim().replace(/^["']|["']$/g, '');
+              if (!process.env[key]) {
+                process.env[key] = val;
+              }
+            }
+          }
+        });
+        console.log('⚙️ Loaded configuration from .env at:', p);
+        break;
+      } catch (e) {}
+    }
+  }
+}
+
+loadEnvFile();
+
 let PORT = parseInt(process.env.PORT || '3001', 10);
 const clients = new Set();
 
@@ -10,6 +44,7 @@ const clients = new Set();
 const CODEX_DIR = process.env.CODEX_LOG_DIR || path.join(os.homedir(), '.codex', 'sessions');
 const CLAUDE_DIR = process.env.CLAUDE_LOG_DIR || path.join(os.homedir(), '.claude', 'projects');
 const ANTIGRAVITY_DIR = process.env.ANTIGRAVITY_LOG_DIR || path.join(os.homedir(), '.gemini', 'antigravity', 'brain');
+
 
 console.log('----------------------------------------------------');
 console.log('🤖 AI Token Real-Time Bridge Server Starting...');
