@@ -448,11 +448,29 @@ const server = http.createServer((req, res) => {
   res.end('Not Found');
 });
 
+function getLocalIPs() {
+  const nets = os.networkInterfaces();
+  const list = [];
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name]) {
+      if (net.family === 'IPv4' && !net.internal) {
+        list.push({ interface: name, ip: net.address });
+      }
+    }
+  }
+  return list;
+}
+
 function startServer(portToTry) {
-  server.listen(portToTry, () => {
+  server.listen(portToTry, '0.0.0.0', () => {
     PORT = portToTry;
+    const ips = getLocalIPs();
     console.log(`🚀 Real-Time Token Server is running at http://localhost:${PORT}`);
     console.log(`📡 SSE Stream: http://localhost:${PORT}/api/tokens/live`);
+    if (ips.length > 0) {
+      console.log('🌐 LAN Access URLs:');
+      ips.forEach(n => console.log(`   - http://${n.ip}:${PORT} (${n.interface})`));
+    }
     try {
       const portFilePath = path.join(__dirname, '.active-port.json');
       fs.writeFileSync(portFilePath, JSON.stringify({ port: PORT, startedAt: new Date().toISOString() }), 'utf8');
@@ -474,3 +492,4 @@ function startServer(portToTry) {
 scanAllHistoricalData();
 setupDirectoryWatchers();
 startServer(PORT);
+

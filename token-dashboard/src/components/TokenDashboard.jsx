@@ -258,7 +258,7 @@ export default function TokenDashboard() {
               </button>
             </div>
 
-            {/* สถานะเชื่อมต่อ Server */}
+              {/* สถานะเชื่อมต่อ Server */}
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-300">
               {dataSource === 'real' ? (
                 serverOnline ? (
@@ -270,7 +270,6 @@ export default function TokenDashboard() {
                   <>
                     <span className="w-2 h-2 rounded-full bg-amber-400" />
                     <span className="text-amber-400 font-medium">รอเปิด server.cjs (Port ใน .env)</span>
-
                   </>
                 )
               ) : (
@@ -280,6 +279,17 @@ export default function TokenDashboard() {
                 </>
               )}
             </div>
+
+            {/* ป้ายแสดง LAN Access URL */}
+            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/80 border border-slate-800 text-[11px] text-slate-400 font-mono">
+              <span className="text-slate-500">🌐 LAN:</span>
+              <span className="text-slate-200">
+                {typeof window !== 'undefined' && window.location.hostname !== 'localhost'
+                  ? `http://${window.location.host}`
+                  : `http://192.168.0.245:5173`}
+              </span>
+            </div>
+
 
           </div>
         </header>

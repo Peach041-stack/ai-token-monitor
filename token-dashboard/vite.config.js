@@ -14,6 +14,7 @@ export default defineConfig(({ mode }) => {
       tailwindcss()
     ],
     server: {
+      host: '0.0.0.0', // เปิดให้เครื่องอื่นในวง LAN เข้าถึงได้
       port: frontendPort,
       open: false,
       proxy: {
