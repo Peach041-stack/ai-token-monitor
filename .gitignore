@@ -24,6 +24,9 @@ settings.json
 *.sqlite
 *.sqlite-*
 .active-port.json
+.token-cache.json
+*.token-cache.json
+
 
 
 # Logs & Personal Sessions

@@ -38,6 +38,11 @@ function loadEnvFile() {
 loadEnvFile();
 
 let PORT = parseInt(process.env.PORT || '3001', 10);
+const DAILY_BUDGET_USD = parseFloat(process.env.DAILY_BUDGET_USD || '5.00');
+const MONTHLY_BUDGET_USD = parseFloat(process.env.MONTHLY_BUDGET_USD || '50.00');
+const ALERT_THRESHOLD_PERCENT = parseFloat(process.env.ALERT_THRESHOLD_PERCENT || '80');
+const EXCHANGE_RATE_THB = parseFloat(process.env.EXCHANGE_RATE_THB || '35.50');
+
 const clients = new Set();
 const home = os.homedir();
 
@@ -49,32 +54,100 @@ function getLocalDateStr(ts) {
   return d.toLocaleDateString('en-CA'); // en-CA format จะเป็น YYYY-MM-DD ตามเวลาท้องถิ่นเสมอ
 }
 
-// รวมทุกตำแหน่งที่ Codex บันทึก Session
-const CODEX_DIRS = [
-  process.env.CODEX_LOG_DIR || path.join(home, '.codex', 'sessions'),
-  path.join(home, '.codex', 'archived_sessions')
-].filter(p => fs.existsSync(p));
+// 🌐 Dynamic Cross-Platform Path Resolver (Windows, macOS, Linux)
+function resolvePlatformPaths() {
+  const platform = os.platform();
+  let codex = [
+    process.env.CODEX_LOG_DIR || path.join(home, '.codex', 'sessions'),
+    path.join(home, '.codex', 'archived_sessions')
+  ];
+  let claude = [
+    process.env.CLAUDE_LOG_DIR || path.join(home, '.claude', 'projects')
+  ];
+  let antigravity = process.env.ANTIGRAVITY_LOG_DIR || path.join(home, '.gemini', 'antigravity', 'brain');
 
-// รวมทุกตำแหน่งที่ Claude (Claude Code, Claude Desktop, Cowork Agent) บันทึก Session
-const CLAUDE_DIRS = [
-  process.env.CLAUDE_LOG_DIR || path.join(home, '.claude', 'projects'),
-  path.join(home, 'AppData', 'Local', 'Packages', 'Claude_pzs8sxrjxfjjc', 'LocalCache', 'Roaming', 'Claude', 'local-agent-mode-sessions'),
-  path.join(home, 'AppData', 'Roaming', 'Claude', 'local-agent-mode-sessions')
-].filter(p => fs.existsSync(p));
+  if (platform === 'win32') {
+    claude.push(
+      path.join(home, 'AppData', 'Local', 'Packages', 'Claude_pzs8sxrjxfjjc', 'LocalCache', 'Roaming', 'Claude', 'local-agent-mode-sessions'),
+      path.join(home, 'AppData', 'Roaming', 'Claude', 'local-agent-mode-sessions')
+    );
+  } else if (platform === 'darwin') { // macOS
+    claude.push(
+      path.join(home, 'Library', 'Application Support', 'Claude', 'local-agent-mode-sessions'),
+      path.join(home, 'Library', 'Application Support', 'Claude', 'projects')
+    );
+    codex.push(
+      path.join(home, 'Library', 'Application Support', 'OpenAI', 'Codex', 'sessions')
+    );
+  } else { // Linux
+    claude.push(
+      path.join(home, '.config', 'Claude', 'local-agent-mode-sessions'),
+      path.join(home, '.config', 'claude', 'projects')
+    );
+    codex.push(
+      path.join(home, '.config', 'openai', 'codex', 'sessions')
+    );
+  }
+
+  return {
+    codexDirs: codex.filter(p => fs.existsSync(p)),
+    claudeDirs: claude.filter(p => fs.existsSync(p)),
+    antigravityDir: antigravity
+  };
+}
+
+const { codexDirs: CODEX_DIRS, claudeDirs: CLAUDE_DIRS, antigravityDir: ANTIGRAVITY_DIR } = resolvePlatformPaths();
 
 const IGNORED_SUBDIRS = new Set([
   'Cache', 'DawnCache', 'GPUCache', 'Cache_Data', 'node_modules', 'rpm', 'mcp-logs-workspace', 'vm_bundles'
 ]);
 
-// ตำแหน่ง Antigravity Brain
-const ANTIGRAVITY_DIR = process.env.ANTIGRAVITY_LOG_DIR || path.join(home, '.gemini', 'antigravity', 'brain');
-
 console.log('----------------------------------------------------');
-console.log('🤖 AI Token Real-Time Bridge Server Starting...');
+console.log(`🤖 AI Token Real-Time Bridge Server Starting on ${os.platform()}...`);
 console.log('📁 Watching Codex Directories:', CODEX_DIRS);
 console.log('📁 Watching Claude Directories:', CLAUDE_DIRS);
 console.log('📁 Watching Antigravity:', ANTIGRAVITY_DIR);
+console.log(`💰 Budget Thresholds: Daily $${DAILY_BUDGET_USD} | Monthly $${MONTHLY_BUDGET_USD} | Warn at ${ALERT_THRESHOLD_PERCENT}%`);
 console.log('----------------------------------------------------');
+
+// 🧩 Declarative Model Registry & Cost Rates
+const MODEL_REGISTRY = [
+  { match: /gpt-6-astra|astra/i, name: 'GPT-6 Astra', provider: 'Codex', costPer1k: 0.012 },
+  { match: /gpt-6/i, name: 'GPT-6', provider: 'Codex', costPer1k: 0.015 },
+  { match: /gpt-5\.6/i, name: 'GPT-5.6', provider: 'Codex', costPer1k: 0.010 },
+  { match: /gpt-5\.5/i, name: 'GPT-5.5', provider: 'Codex', costPer1k: 0.010 },
+  { match: /gpt-5\.4/i, name: 'GPT-5.4', provider: 'Codex', costPer1k: 0.008 },
+  { match: /gpt-5/i, name: 'GPT-5', provider: 'Codex', costPer1k: 0.008 },
+  { match: /gpt-4o-mini/i, name: 'GPT-4o Mini', provider: 'Codex', costPer1k: 0.0006 },
+  { match: /gpt-4o/i, name: 'GPT-4o', provider: 'Codex', costPer1k: 0.005 },
+  { match: /o3-mini/i, name: 'o3-mini', provider: 'Codex', costPer1k: 0.004 },
+  { match: /o3/i, name: 'o3', provider: 'Codex', costPer1k: 0.020 },
+  { match: /codex-auto-review/i, name: 'Codex Auto-Review', provider: 'Codex', costPer1k: 0.005 },
+  { match: /opus-5/i, name: 'Claude Opus 5', provider: 'ClaudeCowork', costPer1k: 0.015 },
+  { match: /opus-4/i, name: 'Claude Opus 4.8', provider: 'ClaudeCowork', costPer1k: 0.015 },
+  { match: /fable-5/i, name: 'Claude Fable 5', provider: 'ClaudeCowork', costPer1k: 0.015 },
+  { match: /sonnet-5/i, name: 'Claude Sonnet 5', provider: 'ClaudeCowork', costPer1k: 0.010 },
+  { match: /sonnet-4-6|3-5-sonnet/i, name: 'Claude Sonnet 4.6', provider: 'ClaudeCowork', costPer1k: 0.006 },
+  { match: /3-7-sonnet/i, name: 'Claude 3.7 Sonnet', provider: 'ClaudeCowork', costPer1k: 0.008 },
+  { match: /haiku-4-5|3-5-haiku/i, name: 'Claude Haiku 4.5', provider: 'ClaudeCowork', costPer1k: 0.001 },
+  { match: /gemini-3\.0/i, name: 'Gemini 3.0 Flash / Pro', provider: 'Antigravity', costPer1k: 0.008 },
+  { match: /gemini-2\.5-pro/i, name: 'Gemini 2.5 Pro', provider: 'Antigravity', costPer1k: 0.007 },
+  { match: /gemini-2\.5-flash/i, name: 'Gemini 2.5 Flash', provider: 'Antigravity', costPer1k: 0.0005 },
+  { match: /antigravity/i, name: 'Antigravity (Gemini)', provider: 'Antigravity', costPer1k: 0.008 }
+];
+
+function resolveModelInfo(rawModel, provider) {
+  if (!rawModel) {
+    const fallbackName = provider === 'Codex' ? 'GPT-6 Astra' : provider === 'ClaudeCowork' ? 'Claude Sonnet 5' : 'Gemini 3.0 Flash / Pro';
+    return { name: fallbackName, provider, costPer1k: provider === 'ClaudeCowork' ? 0.015 : provider === 'Codex' ? 0.010 : 0.008 };
+  }
+  for (const entry of MODEL_REGISTRY) {
+    if (entry.match.test(rawModel)) {
+      return { name: entry.name, provider: entry.provider, costPer1k: entry.costPer1k };
+    }
+  }
+  return { name: rawModel, provider, costPer1k: provider === 'ClaudeCowork' ? 0.015 : provider === 'Codex' ? 0.010 : 0.008 };
+}
 
 let dailyMap = {};
 let subModelStatsMap = {};
@@ -82,34 +155,33 @@ let recentLiveEvents = [];
 const fileOffsets = new Map();
 const sessionModelCache = new Map();
 
-function normalizeModelName(rawModel, provider) {
-  if (!rawModel) return provider === 'Codex' ? 'GPT-6 Astra' : provider === 'ClaudeCowork' ? 'Claude 3.7 Sonnet' : 'Gemini 3.0 Flash';
-  const m = rawModel.toLowerCase();
-  if (m.includes('gpt-6-astra') || m.includes('astra')) return 'GPT-6 Astra';
-  if (m.includes('gpt-6')) return 'GPT-6';
-  if (m.includes('gpt-5.6')) return 'GPT-5.6';
-  if (m.includes('gpt-5.5')) return 'GPT-5.5';
-  if (m.includes('gpt-5.4')) return 'GPT-5.4';
-  if (m.includes('gpt-5')) return 'GPT-5';
-  if (m.includes('gpt-4o-mini')) return 'GPT-4o Mini';
-  if (m.includes('gpt-4o')) return 'GPT-4o';
-  if (m.includes('o3-mini')) return 'o3-mini';
-  if (m.includes('o3')) return 'o3';
-  if (m.includes('codex-auto-review')) return 'Codex Auto-Review';
-  if (m.includes('opus-5')) return 'Claude Opus 5';
-  if (m.includes('opus-4')) return 'Claude Opus 4.8';
-  if (m.includes('fable-5')) return 'Claude Fable 5';
-  if (m.includes('sonnet-5')) return 'Claude Sonnet 5';
-  if (m.includes('sonnet-4-6')) return 'Claude Sonnet 4.6';
-  if (m.includes('3-7-sonnet')) return 'Claude 3.7 Sonnet';
-  if (m.includes('3-5-sonnet')) return 'Claude 3.5 Sonnet';
-  if (m.includes('haiku-4-5')) return 'Claude Haiku 4.5';
-  if (m.includes('3-5-haiku')) return 'Claude 3.5 Haiku';
-  if (m.includes('gemini-3.0')) return 'Gemini 3.0 Flash';
-  if (m.includes('gemini-2.5-pro')) return 'Gemini 2.5 Pro';
-  if (m.includes('gemini-2.5-flash')) return 'Gemini 2.5 Flash';
-  if (m.includes('antigravity')) return 'Antigravity (Gemini)';
-  return rawModel;
+// ⚡ Persistent Cache Management (.token-cache.json)
+const CACHE_FILE = path.join(__dirname, '.token-cache.json');
+let fileCache = {};
+
+function loadPersistentCache() {
+  if (fs.existsSync(CACHE_FILE)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
+      if (data && data.version === 2 && data.files) {
+        fileCache = data.files;
+        return true;
+      }
+    } catch (e) {}
+  }
+  fileCache = {};
+  return false;
+}
+
+let cacheSaveTimer = null;
+function savePersistentCacheDebounced() {
+  if (cacheSaveTimer) clearTimeout(cacheSaveTimer);
+  cacheSaveTimer = setTimeout(() => {
+    try {
+      const payload = { version: 2, lastSaved: new Date().toISOString(), files: fileCache };
+      fs.writeFileSync(CACHE_FILE, JSON.stringify(payload), 'utf8');
+    } catch (e) {}
+  }, 1000);
 }
 
 function parseCodexLine(line, filename = '') {
@@ -137,14 +209,15 @@ function parseCodexLine(line, filename = '') {
       const total = inp + out + reas + cach;
       if (total === 0) return null;
 
-      const rawModel = info.model || info.model_name || sessionModelCache.get(filename) || 'gpt-5.6';
-      const cleanModel = normalizeModelName(rawModel, 'Codex');
+      const rawModel = info.model || info.model_name || sessionModelCache.get(filename) || 'gpt-6-astra';
+      const modelInfo = resolveModelInfo(rawModel, 'Codex');
       const dateStr = getLocalDateStr(obj.timestamp);
 
       return {
         provider: 'Codex',
-        model: cleanModel,
+        model: modelInfo.name,
         rawModel,
+        costPer1k: modelInfo.costPer1k,
         inputTokens: inp,
         outputTokens: out,
         reasoningTokens: reas,
@@ -172,13 +245,14 @@ function parseClaudeLine(line) {
       if (total === 0) return null;
 
       const rawModel = obj.model || obj.message?.model || 'claude-opus-5';
-      const cleanModel = normalizeModelName(rawModel, 'ClaudeCowork');
+      const modelInfo = resolveModelInfo(rawModel, 'ClaudeCowork');
       const dateStr = getLocalDateStr(obj.timestamp);
 
       return {
         provider: 'ClaudeCowork',
-        model: cleanModel,
+        model: modelInfo.name,
         rawModel,
+        costPer1k: modelInfo.costPer1k,
         inputTokens: inp,
         outputTokens: out,
         cachedTokens: cr,
@@ -200,11 +274,12 @@ function parseAntigravityLine(line) {
       if (chars > 0) {
         const estTokens = Math.round(chars / 3.5);
         const dateStr = getLocalDateStr(obj.timestamp);
-        const cleanModel = 'Gemini 3.0 Flash / Pro';
+        const modelInfo = resolveModelInfo('gemini-3.0', 'Antigravity');
         return {
           provider: 'Antigravity',
-          model: cleanModel,
+          model: modelInfo.name,
           rawModel: 'gemini-3.0',
+          costPer1k: modelInfo.costPer1k,
           totalTokens: estTokens,
           outputTokens: estTokens,
           timestamp: obj.timestamp || new Date().toISOString(),
@@ -216,55 +291,95 @@ function parseAntigravityLine(line) {
   return null;
 }
 
+function addAggregatedStats(dateStr, provider, modelName, tokens, costPer1k = 0.01) {
+  if (!dailyMap[dateStr]) {
+    dailyMap[dateStr] = {
+      date: dateStr,
+      ClaudeCowork: 0,
+      Codex: 0,
+      Antigravity: 0,
+      total: 0,
+      costUSD: 0
+    };
+  }
+  dailyMap[dateStr][provider] += tokens;
+  dailyMap[dateStr].total += tokens;
+  dailyMap[dateStr].costUSD += (tokens / 1000) * costPer1k;
+
+  if (!subModelStatsMap[modelName]) {
+    subModelStatsMap[modelName] = {
+      modelName,
+      provider,
+      totalTokens: 0,
+      callCount: 0,
+      costPer1k
+    };
+  }
+  subModelStatsMap[modelName].totalTokens += tokens;
+  subModelStatsMap[modelName].callCount += 1;
+}
+
+// ⚡ Superfast Incremental Scanner with Caching
 function scanAllHistoricalData() {
-  console.log('🔄 Indexing historical sessions across all directories...');
+  const t0 = Date.now();
+  console.log('🔄 Indexing historical sessions with persistent cache...');
   dailyMap = {};
   subModelStatsMap = {};
+  loadPersistentCache();
 
-  function addStats(dateStr, provider, modelName, tokens) {
-    if (!dailyMap[dateStr]) {
-      dailyMap[dateStr] = {
-        date: dateStr,
-        ClaudeCowork: 0,
-        Codex: 0,
-        Antigravity: 0,
-        total: 0
-      };
-    }
-    dailyMap[dateStr][provider] += tokens;
-    dailyMap[dateStr].total += tokens;
+  let cachedHitCount = 0;
+  let newFileParsedCount = 0;
 
-    if (!subModelStatsMap[modelName]) {
-      subModelStatsMap[modelName] = {
-        modelName,
-        provider,
-        totalTokens: 0,
-        callCount: 0
+  function processFileWithCache(filePath, provider, parseFn) {
+    try {
+      const stat = fs.statSync(filePath);
+      fileOffsets.set(filePath, stat.size);
+
+      const cached = fileCache[filePath];
+      if (cached && cached.mtime === stat.mtimeMs && cached.size === stat.size) {
+        // Fast Cache Hit! Replay cached aggregates
+        for (const [dStr, dData] of Object.entries(cached.daily || {})) {
+          addAggregatedStats(dStr, provider, dData.model || 'Unknown', dData.tokens || 0, dData.costPer1k || 0.01);
+        }
+        cachedHitCount++;
+        return;
+      }
+
+      // Cache Miss / File Changed: Parse fresh
+      const content = fs.readFileSync(filePath, 'utf8');
+      const lines = content.split('\n');
+      const fileDaily = {};
+
+      for (const l of lines) {
+        const res = parseFn(l, path.basename(filePath));
+        if (res) {
+          addAggregatedStats(res.dateStr, provider, res.model, res.totalTokens, res.costPer1k);
+          if (!fileDaily[res.dateStr]) {
+            fileDaily[res.dateStr] = { tokens: 0, model: res.model, costPer1k: res.costPer1k };
+          }
+          fileDaily[res.dateStr].tokens += res.totalTokens;
+        }
+      }
+
+      fileCache[filePath] = {
+        mtime: stat.mtimeMs,
+        size: stat.size,
+        daily: fileDaily
       };
-    }
-    subModelStatsMap[modelName].totalTokens += tokens;
-    subModelStatsMap[modelName].callCount += 1;
+      newFileParsedCount++;
+    } catch (e) {}
   }
 
-  // 1. Scan All Codex Dirs
+  // 1. Scan Codex
   CODEX_DIRS.forEach(dir => {
     function walkCodex(d) {
       try {
-        const entries = fs.readdirSync(d, { withFileTypes: true });
-        for (const ent of entries) {
+        for (const ent of fs.readdirSync(d, { withFileTypes: true })) {
           const full = path.join(d, ent.name);
           if (ent.isDirectory()) {
             if (!IGNORED_SUBDIRS.has(ent.name)) walkCodex(full);
           } else if (ent.name.endsWith('.jsonl')) {
-            try {
-              const content = fs.readFileSync(full, 'utf8');
-              fileOffsets.set(full, Buffer.byteLength(content, 'utf8'));
-              const lines = content.split('\n');
-              for (const l of lines) {
-                const res = parseCodexLine(l, ent.name);
-                if (res) addStats(res.dateStr, 'Codex', res.model, res.totalTokens);
-              }
-            } catch (e) {}
+            processFileWithCache(full, 'Codex', parseCodexLine);
           }
         }
       } catch (e) {}
@@ -272,25 +387,16 @@ function scanAllHistoricalData() {
     walkCodex(dir);
   });
 
-  // 2. Scan All Claude Dirs
+  // 2. Scan Claude (Excluding audit.jsonl internal telemetry)
   CLAUDE_DIRS.forEach(dir => {
     function walkClaude(d) {
       try {
-        const entries = fs.readdirSync(d, { withFileTypes: true });
-        for (const ent of entries) {
+        for (const ent of fs.readdirSync(d, { withFileTypes: true })) {
           const full = path.join(d, ent.name);
           if (ent.isDirectory()) {
             if (!IGNORED_SUBDIRS.has(ent.name)) walkClaude(full);
           } else if (ent.name.endsWith('.jsonl') && !ent.name.startsWith('audit')) {
-            try {
-              const content = fs.readFileSync(full, 'utf8');
-              fileOffsets.set(full, Buffer.byteLength(content, 'utf8'));
-              const lines = content.split('\n');
-              for (const l of lines) {
-                const res = parseClaudeLine(l);
-                if (res) addStats(res.dateStr, 'ClaudeCowork', res.model, res.totalTokens);
-              }
-            } catch (e) {}
+            processFileWithCache(full, 'ClaudeCowork', parseClaudeLine);
           }
         }
       } catch (e) {}
@@ -298,24 +404,15 @@ function scanAllHistoricalData() {
     walkClaude(dir);
   });
 
-  // 3. Scan Antigravity Dir
+  // 3. Scan Antigravity
   if (fs.existsSync(ANTIGRAVITY_DIR)) {
-    function walkAntigravity(dir) {
+    function walkAntigravity(d) {
       try {
-        const entries = fs.readdirSync(dir, { withFileTypes: true });
-        for (const ent of entries) {
-          const full = path.join(dir, ent.name);
+        for (const ent of fs.readdirSync(d, { withFileTypes: true })) {
+          const full = path.join(d, ent.name);
           if (ent.isDirectory()) walkAntigravity(full);
           else if (ent.name === 'transcript.jsonl') {
-            try {
-              const content = fs.readFileSync(full, 'utf8');
-              fileOffsets.set(full, Buffer.byteLength(content, 'utf8'));
-              const lines = content.split('\n');
-              for (const l of lines) {
-                const res = parseAntigravityLine(l);
-                if (res) addStats(res.dateStr, 'Antigravity', res.model, res.totalTokens);
-              }
-            } catch (e) {}
+            processFileWithCache(full, 'Antigravity', parseAntigravityLine);
           }
         }
       } catch (e) {}
@@ -323,25 +420,67 @@ function scanAllHistoricalData() {
     walkAntigravity(ANTIGRAVITY_DIR);
   }
 
-  console.log(`✅ Indexed ${Object.keys(dailyMap).length} active days & ${Object.keys(subModelStatsMap).length} unique sub-models!`);
+  savePersistentCacheDebounced();
+  console.log(`✅ Indexed in ${Date.now() - t0}ms (${cachedHitCount} cached, ${newFileParsedCount} parsed) -> ${Object.keys(dailyMap).length} active days & ${Object.keys(subModelStatsMap).length} models!`);
 }
+
+// 💰 Budget Calculation Helper
+function calculateCurrentBudget() {
+  const today = getLocalDateStr();
+  const currentMonthPrefix = today.slice(0, 7); // e.g. "2026-09"
+
+  let todaySpentUSD = 0;
+  let monthSpentUSD = 0;
+
+  for (const [date, data] of Object.entries(dailyMap)) {
+    const cost = data.costUSD || 0;
+    if (date === today) todaySpentUSD += cost;
+    if (date.startsWith(currentMonthPrefix)) monthSpentUSD += cost;
+  }
+
+  const dailyPercent = DAILY_BUDGET_USD > 0 ? (todaySpentUSD / DAILY_BUDGET_USD) * 100 : 0;
+  const monthlyPercent = MONTHLY_BUDGET_USD > 0 ? (monthSpentUSD / MONTHLY_BUDGET_USD) * 100 : 0;
+
+  let alertLevel = 'normal';
+  let alertMessage = '';
+
+  if (dailyPercent >= 100 || monthlyPercent >= 100) {
+    alertLevel = 'critical';
+    alertMessage = `🚨 เกินงบประมาณแล้ว! (วันนี้: ${dailyPercent.toFixed(1)}% | เดือนนี้: ${monthlyPercent.toFixed(1)}%)`;
+  } else if (dailyPercent >= ALERT_THRESHOLD_PERCENT || monthlyPercent >= ALERT_THRESHOLD_PERCENT) {
+    alertLevel = 'warning';
+    alertMessage = `⚠️ การใช้งานใกล้ถึงโควตางบประมาณ (วันนี้: ${dailyPercent.toFixed(1)}% | เดือนนี้: ${monthlyPercent.toFixed(1)}%)`;
+  }
+
+  return {
+    daily: {
+      budgetUSD: DAILY_BUDGET_USD,
+      spentUSD: parseFloat(todaySpentUSD.toFixed(4)),
+      spentTHB: parseFloat((todaySpentUSD * EXCHANGE_RATE_THB).toFixed(2)),
+      percent: parseFloat(dailyPercent.toFixed(1)),
+      remainingUSD: parseFloat(Math.max(0, DAILY_BUDGET_USD - todaySpentUSD).toFixed(4))
+    },
+    monthly: {
+      budgetUSD: MONTHLY_BUDGET_USD,
+      spentUSD: parseFloat(monthSpentUSD.toFixed(4)),
+      spentTHB: parseFloat((monthSpentUSD * EXCHANGE_RATE_THB).toFixed(2)),
+      percent: parseFloat(monthlyPercent.toFixed(1)),
+      remainingUSD: parseFloat(Math.max(0, MONTHLY_BUDGET_USD - monthSpentUSD).toFixed(4))
+    },
+    exchangeRateTHB: EXCHANGE_RATE_THB,
+    alertThresholdPercent: ALERT_THRESHOLD_PERCENT,
+    alertLevel,
+    alertMessage
+  };
+}
+
+let lastAlertEmittedLevel = 'normal';
 
 function broadcastLiveEvent(evt) {
   recentLiveEvents.unshift(evt);
   if (recentLiveEvents.length > 50) recentLiveEvents.pop();
 
-  const today = getLocalDateStr();
-  if (!dailyMap[today]) {
-    dailyMap[today] = { date: today, ClaudeCowork: 0, Codex: 0, Antigravity: 0, total: 0 };
-  }
-  dailyMap[today][evt.provider] = (dailyMap[today][evt.provider] || 0) + evt.totalTokens;
-  dailyMap[today].total += evt.totalTokens;
-
-  if (!subModelStatsMap[evt.model]) {
-    subModelStatsMap[evt.model] = { modelName: evt.model, provider: evt.provider, totalTokens: 0, callCount: 0 };
-  }
-  subModelStatsMap[evt.model].totalTokens += evt.totalTokens;
-  subModelStatsMap[evt.model].callCount += 1;
+  addAggregatedStats(evt.dateStr, evt.provider, evt.model, evt.totalTokens, evt.costPer1k);
 
   console.log(`⚡ [LIVE EVENT] ${evt.provider} (${evt.model}): +${evt.totalTokens.toLocaleString()} tokens`);
 
@@ -351,6 +490,20 @@ function broadcastLiveEvent(evt) {
       client.write(payload);
     } catch (e) {
       clients.delete(client);
+    }
+  }
+
+  // Check Budget Alerts after Live Event
+  const budget = calculateCurrentBudget();
+  if (budget.alertLevel !== 'normal' && budget.alertLevel !== lastAlertEmittedLevel) {
+    lastAlertEmittedLevel = budget.alertLevel;
+    const alertPayload = `data: ${JSON.stringify({ type: 'BUDGET_ALERT', ...budget })}\n\n`;
+    for (const client of clients) {
+      try {
+        client.write(alertPayload);
+      } catch (e) {
+        clients.delete(client);
+      }
     }
   }
 }
@@ -443,6 +596,13 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (url.pathname === '/api/budget') {
+    const budgetData = calculateCurrentBudget();
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ success: true, ...budgetData }));
+    return;
+  }
+
   if (url.pathname === '/api/tokens/live') {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
@@ -463,9 +623,11 @@ const server = http.createServer((req, res) => {
     res.end(JSON.stringify({
       status: 'ok',
       port: PORT,
+      platform: os.platform(),
       clientsConnected: clients.size,
       totalDays: Object.keys(dailyMap).length,
       subModelsTracked: Object.keys(subModelStatsMap).length,
+      budget: calculateCurrentBudget(),
       recentEvents: recentLiveEvents.slice(0, 5)
     }));
     return;

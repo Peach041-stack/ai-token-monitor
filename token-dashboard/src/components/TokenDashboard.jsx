@@ -6,6 +6,7 @@ import {
 } from '../utils/mockDataGenerator';
 
 import KPICards from './KPICards';
+import BudgetAlertBanner from './BudgetAlertBanner';
 import FilterControls from './FilterControls';
 import ChartSection from './ChartSection';
 import TokenHeatmap from './TokenHeatmap';
@@ -22,10 +23,11 @@ export default function TokenDashboard() {
   const [serverOnline, setServerOnline] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
-  // ข้อมูลประวัติการใช้งาน
+  // ข้อมูลประวัติการใช้งานและงบประมาณ
   const [rawData, setRawData] = useState([]);
   const [subModelsList, setSubModelsList] = useState([]);
   const [liveEventsList, setLiveEventsList] = useState([]);
+  const [budgetData, setBudgetData] = useState(null);
 
   // สถานะตัวกรองช่วงเวลา (daily | custom | monthly)
   const [filterType, setFilterType] = useState('daily');
@@ -70,16 +72,23 @@ export default function TokenDashboard() {
           if (json.models) setSubModelsList(json.models);
           setServerOnline(true);
         } else {
-          // หากไม่มีประวัติจริง ให้ fallback เป็น mock
           setRawData(generateDailyMockData());
         }
       } else {
         setServerOnline(false);
         setRawData(generateDailyMockData());
       }
+
+      // ดึงข้อมูลงบประมาณและโควตา
+      try {
+        const bRes = await fetch(`${API_BASE}/api/budget`);
+        if (bRes.ok) {
+          const bJson = await bRes.json();
+          if (bJson.success) setBudgetData(bJson);
+        }
+      } catch (be) {}
     } catch (e) {
       setServerOnline(false);
-      // Fallback ถ้ายังไม่ได้เปิด backend server
       setRawData(generateDailyMockData());
     } finally {
       setIsSyncing(false);
@@ -108,16 +117,27 @@ export default function TokenDashboard() {
       };
 
       eventSource.onmessage = (event) => {
-
         try {
           const data = JSON.parse(event.data);
           if (data.type === 'CONNECTED') return;
+
+          // รับ Event แจ้งเตือนงบประมาณ (Budget Alert)
+          if (data.type === 'BUDGET_ALERT') {
+            setBudgetData(data);
+            if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+              new Notification(data.alertLevel === 'critical' ? '🚨 เกินงบประมาณแล้ว!' : '⚠️ ใกล้ถึงโควตางบประมาณ', {
+                body: data.alertMessage,
+                icon: '/favicon.ico'
+              });
+            }
+            return;
+          }
 
           // รับ Real-Time Token Event จาก Codex / Claude / Antigravity
           const newEvent = {
             id: Date.now() + Math.random(),
             time: new Date().toLocaleTimeString('th-TH', { hour12: false }),
-            model: data.provider || 'Codex',
+            model: data.model || data.provider || 'Codex',
             task: data.model || 'Live Session Event',
             promptTokens: data.inputTokens || 0,
             completionTokens: data.outputTokens || 0,
@@ -293,6 +313,11 @@ export default function TokenDashboard() {
 
           </div>
         </header>
+
+        {/* แบนเนอร์การแจ้งเตือนงบประมาณและโควตา (Budget Alert Banner) */}
+        {dataSource === 'real' && budgetData && (
+          <BudgetAlertBanner budgetData={budgetData} />
+        )}
 
         {/* แถบสรุป KPI Metrics */}
         <KPICards chartData={chartData} visibleModels={visibleModels} />
