@@ -275,7 +275,7 @@ function scanAllHistoricalData() {
           const full = path.join(d, ent.name);
           if (ent.isDirectory()) {
             if (!IGNORED_SUBDIRS.has(ent.name)) walkClaude(full);
-          } else if (ent.name.endsWith('.jsonl')) {
+          } else if (ent.name.endsWith('.jsonl') && !ent.name.startsWith('audit')) {
             try {
               const content = fs.readFileSync(full, 'utf8');
               fileOffsets.set(full, Buffer.byteLength(content, 'utf8'));
@@ -392,7 +392,7 @@ function setupDirectoryWatchers() {
   CLAUDE_DIRS.forEach(dir => {
     try {
       fs.watch(dir, { recursive: true }, (eventType, filename) => {
-        if (!filename || !filename.endsWith('.jsonl')) return;
+        if (!filename || !filename.endsWith('.jsonl') || filename.includes('audit')) return;
         const full = path.join(dir, filename);
         if (fs.existsSync(full)) watchFileIncremental(full, 'ClaudeCowork');
       });
