@@ -39,29 +39,51 @@ loadEnvFile();
 
 let PORT = parseInt(process.env.PORT || '3001', 10);
 const clients = new Set();
+const home = os.homedir();
 
-// Dynamic OS-safe Paths
-const CODEX_DIR = process.env.CODEX_LOG_DIR || path.join(os.homedir(), '.codex', 'sessions');
-const CLAUDE_DIR = process.env.CLAUDE_LOG_DIR || path.join(os.homedir(), '.claude', 'projects');
-const ANTIGRAVITY_DIR = process.env.ANTIGRAVITY_LOG_DIR || path.join(os.homedir(), '.gemini', 'antigravity', 'brain');
+// แปลง Timestamp เป็นวันที่ YYYY-MM-DD ตาม Local Timezone ของเครื่องผู้ใช้ (ป้องกันปัญหาเหลื่อมเวลา UTC)
+function getLocalDateStr(ts) {
+  if (!ts) return new Date().toLocaleDateString('en-CA');
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return new Date().toLocaleDateString('en-CA');
+  return d.toLocaleDateString('en-CA'); // en-CA format จะเป็น YYYY-MM-DD ตามเวลาท้องถิ่นเสมอ
+}
 
+// รวมทุกตำแหน่งที่ Codex บันทึก Session
+const CODEX_DIRS = [
+  process.env.CODEX_LOG_DIR || path.join(home, '.codex', 'sessions'),
+  path.join(home, '.codex', 'archived_sessions')
+].filter(p => fs.existsSync(p));
+
+// รวมทุกตำแหน่งที่ Claude (Claude Code, Claude Desktop, Cowork Agent) บันทึก Session
+const CLAUDE_DIRS = [
+  process.env.CLAUDE_LOG_DIR || path.join(home, '.claude', 'projects'),
+  path.join(home, 'AppData', 'Local', 'Packages', 'Claude_pzs8sxrjxfjjc', 'LocalCache', 'Roaming', 'Claude', 'local-agent-mode-sessions'),
+  path.join(home, 'AppData', 'Roaming', 'Claude', 'local-agent-mode-sessions')
+].filter(p => fs.existsSync(p));
+
+const IGNORED_SUBDIRS = new Set([
+  'Cache', 'DawnCache', 'GPUCache', 'Cache_Data', 'node_modules', 'rpm', 'mcp-logs-workspace', 'vm_bundles'
+]);
+
+// ตำแหน่ง Antigravity Brain
+const ANTIGRAVITY_DIR = process.env.ANTIGRAVITY_LOG_DIR || path.join(home, '.gemini', 'antigravity', 'brain');
 
 console.log('----------------------------------------------------');
 console.log('🤖 AI Token Real-Time Bridge Server Starting...');
-console.log('📁 Watching Codex:', CODEX_DIR);
-console.log('📁 Watching Claude:', CLAUDE_DIR);
+console.log('📁 Watching Codex Directories:', CODEX_DIRS);
+console.log('📁 Watching Claude Directories:', CLAUDE_DIRS);
 console.log('📁 Watching Antigravity:', ANTIGRAVITY_DIR);
 console.log('----------------------------------------------------');
 
 let dailyMap = {};
-let subModelStatsMap = {}; // สถิติแยกตามชื่อโมเดลย่อยละเอียด (e.g. GPT-5.6, Claude Opus 5, Gemini 2.5)
+let subModelStatsMap = {};
 let recentLiveEvents = [];
 const fileOffsets = new Map();
-const sessionModelCache = new Map(); // เก็บ mapping sessionId -> active model name
+const sessionModelCache = new Map();
 
-// Normalize ชื่อโมเดลให้อ่านง่าย
 function normalizeModelName(rawModel, provider) {
-  if (!rawModel) return provider === 'Codex' ? 'GPT-5.6' : provider === 'ClaudeCowork' ? 'Claude 3.7 Sonnet' : 'Gemini 2.5 Flash';
+  if (!rawModel) return provider === 'Codex' ? 'GPT-5.6' : provider === 'ClaudeCowork' ? 'Claude 3.7 Sonnet' : 'Gemini 3.0 Flash';
   const m = rawModel.toLowerCase();
   if (m.includes('gpt-5.6')) return 'GPT-5.6';
   if (m.includes('gpt-5.5')) return 'GPT-5.5';
@@ -89,7 +111,6 @@ function parseCodexLine(line, filename = '') {
   try {
     const obj = JSON.parse(line);
 
-    // ตรวจหา Model จาก session_meta, world_state, หรือ turn_context
     if (obj.type === 'world_state') {
       const m = obj.payload?.state?.collaboration_mode?.model;
       if (m && filename) sessionModelCache.set(filename, m);
@@ -112,7 +133,7 @@ function parseCodexLine(line, filename = '') {
 
       const rawModel = info.model || info.model_name || sessionModelCache.get(filename) || 'gpt-5.6';
       const cleanModel = normalizeModelName(rawModel, 'Codex');
-      const dateStr = (obj.timestamp ? new Date(obj.timestamp) : new Date()).toISOString().split('T')[0];
+      const dateStr = getLocalDateStr(obj.timestamp);
 
       return {
         provider: 'Codex',
@@ -146,7 +167,7 @@ function parseClaudeLine(line) {
 
       const rawModel = obj.model || obj.message?.model || 'claude-opus-5';
       const cleanModel = normalizeModelName(rawModel, 'ClaudeCowork');
-      const dateStr = (obj.timestamp ? new Date(obj.timestamp) : new Date()).toISOString().split('T')[0];
+      const dateStr = getLocalDateStr(obj.timestamp);
 
       return {
         provider: 'ClaudeCowork',
@@ -172,7 +193,7 @@ function parseAntigravityLine(line) {
       const chars = (obj.content || '').length + JSON.stringify(obj.tool_calls || []).length;
       if (chars > 0) {
         const estTokens = Math.round(chars / 3.5);
-        const dateStr = (obj.timestamp ? new Date(obj.timestamp) : new Date()).toISOString().split('T')[0];
+        const dateStr = getLocalDateStr(obj.timestamp);
         const cleanModel = 'Gemini 3.0 Flash / Pro';
         return {
           provider: 'Antigravity',
@@ -190,12 +211,11 @@ function parseAntigravityLine(line) {
 }
 
 function scanAllHistoricalData() {
-  console.log('🔄 Indexing historical sessions and sub-models...');
+  console.log('🔄 Indexing historical sessions across all directories...');
   dailyMap = {};
   subModelStatsMap = {};
 
   function addStats(dateStr, provider, modelName, tokens) {
-    // 1. Daily Map
     if (!dailyMap[dateStr]) {
       dailyMap[dateStr] = {
         date: dateStr,
@@ -208,7 +228,6 @@ function scanAllHistoricalData() {
     dailyMap[dateStr][provider] += tokens;
     dailyMap[dateStr].total += tokens;
 
-    // 2. Sub-Model Stats Map
     if (!subModelStatsMap[modelName]) {
       subModelStatsMap[modelName] = {
         modelName,
@@ -221,15 +240,16 @@ function scanAllHistoricalData() {
     subModelStatsMap[modelName].callCount += 1;
   }
 
-  // 1. Scan Codex
-  if (fs.existsSync(CODEX_DIR)) {
-    function walkCodex(dir) {
+  // 1. Scan All Codex Dirs
+  CODEX_DIRS.forEach(dir => {
+    function walkCodex(d) {
       try {
-        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        const entries = fs.readdirSync(d, { withFileTypes: true });
         for (const ent of entries) {
-          const full = path.join(dir, ent.name);
-          if (ent.isDirectory()) walkCodex(full);
-          else if (ent.name.endsWith('.jsonl')) {
+          const full = path.join(d, ent.name);
+          if (ent.isDirectory()) {
+            if (!IGNORED_SUBDIRS.has(ent.name)) walkCodex(full);
+          } else if (ent.name.endsWith('.jsonl')) {
             try {
               const content = fs.readFileSync(full, 'utf8');
               fileOffsets.set(full, Buffer.byteLength(content, 'utf8'));
@@ -243,18 +263,19 @@ function scanAllHistoricalData() {
         }
       } catch (e) {}
     }
-    walkCodex(CODEX_DIR);
-  }
+    walkCodex(dir);
+  });
 
-  // 2. Scan Claude
-  if (fs.existsSync(CLAUDE_DIR)) {
-    function walkClaude(dir) {
+  // 2. Scan All Claude Dirs
+  CLAUDE_DIRS.forEach(dir => {
+    function walkClaude(d) {
       try {
-        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        const entries = fs.readdirSync(d, { withFileTypes: true });
         for (const ent of entries) {
-          const full = path.join(dir, ent.name);
-          if (ent.isDirectory()) walkClaude(full);
-          else if (ent.name.endsWith('.jsonl')) {
+          const full = path.join(d, ent.name);
+          if (ent.isDirectory()) {
+            if (!IGNORED_SUBDIRS.has(ent.name)) walkClaude(full);
+          } else if (ent.name.endsWith('.jsonl')) {
             try {
               const content = fs.readFileSync(full, 'utf8');
               fileOffsets.set(full, Buffer.byteLength(content, 'utf8'));
@@ -268,10 +289,10 @@ function scanAllHistoricalData() {
         }
       } catch (e) {}
     }
-    walkClaude(CLAUDE_DIR);
-  }
+    walkClaude(dir);
+  });
 
-  // 3. Scan Antigravity
+  // 3. Scan Antigravity Dir
   if (fs.existsSync(ANTIGRAVITY_DIR)) {
     function walkAntigravity(dir) {
       try {
@@ -303,7 +324,7 @@ function broadcastLiveEvent(evt) {
   recentLiveEvents.unshift(evt);
   if (recentLiveEvents.length > 50) recentLiveEvents.pop();
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = getLocalDateStr();
   if (!dailyMap[today]) {
     dailyMap[today] = { date: today, ClaudeCowork: 0, Codex: 0, Antigravity: 0, total: 0 };
   }
@@ -358,25 +379,25 @@ function watchFileIncremental(filePath, provider) {
 }
 
 function setupDirectoryWatchers() {
-  if (fs.existsSync(CODEX_DIR)) {
+  CODEX_DIRS.forEach(dir => {
     try {
-      fs.watch(CODEX_DIR, { recursive: true }, (eventType, filename) => {
+      fs.watch(dir, { recursive: true }, (eventType, filename) => {
         if (!filename || !filename.endsWith('.jsonl')) return;
-        const full = path.join(CODEX_DIR, filename);
+        const full = path.join(dir, filename);
         if (fs.existsSync(full)) watchFileIncremental(full, 'Codex');
       });
     } catch (e) {}
-  }
+  });
 
-  if (fs.existsSync(CLAUDE_DIR)) {
+  CLAUDE_DIRS.forEach(dir => {
     try {
-      fs.watch(CLAUDE_DIR, { recursive: true }, (eventType, filename) => {
+      fs.watch(dir, { recursive: true }, (eventType, filename) => {
         if (!filename || !filename.endsWith('.jsonl')) return;
-        const full = path.join(CLAUDE_DIR, filename);
+        const full = path.join(dir, filename);
         if (fs.existsSync(full)) watchFileIncremental(full, 'ClaudeCowork');
       });
     } catch (e) {}
-  }
+  });
 
   if (fs.existsSync(ANTIGRAVITY_DIR)) {
     try {
@@ -492,4 +513,3 @@ function startServer(portToTry) {
 scanAllHistoricalData();
 setupDirectoryWatchers();
 startServer(PORT);
-
