@@ -83,8 +83,10 @@ const fileOffsets = new Map();
 const sessionModelCache = new Map();
 
 function normalizeModelName(rawModel, provider) {
-  if (!rawModel) return provider === 'Codex' ? 'GPT-5.6' : provider === 'ClaudeCowork' ? 'Claude 3.7 Sonnet' : 'Gemini 3.0 Flash';
+  if (!rawModel) return provider === 'Codex' ? 'GPT-6 Astra' : provider === 'ClaudeCowork' ? 'Claude 3.7 Sonnet' : 'Gemini 3.0 Flash';
   const m = rawModel.toLowerCase();
+  if (m.includes('gpt-6-astra') || m.includes('astra')) return 'GPT-6 Astra';
+  if (m.includes('gpt-6')) return 'GPT-6';
   if (m.includes('gpt-5.6')) return 'GPT-5.6';
   if (m.includes('gpt-5.5')) return 'GPT-5.5';
   if (m.includes('gpt-5.4')) return 'GPT-5.4';
@@ -93,11 +95,15 @@ function normalizeModelName(rawModel, provider) {
   if (m.includes('gpt-4o')) return 'GPT-4o';
   if (m.includes('o3-mini')) return 'o3-mini';
   if (m.includes('o3')) return 'o3';
+  if (m.includes('codex-auto-review')) return 'Codex Auto-Review';
   if (m.includes('opus-5')) return 'Claude Opus 5';
   if (m.includes('opus-4')) return 'Claude Opus 4.8';
   if (m.includes('fable-5')) return 'Claude Fable 5';
+  if (m.includes('sonnet-5')) return 'Claude Sonnet 5';
+  if (m.includes('sonnet-4-6')) return 'Claude Sonnet 4.6';
   if (m.includes('3-7-sonnet')) return 'Claude 3.7 Sonnet';
   if (m.includes('3-5-sonnet')) return 'Claude 3.5 Sonnet';
+  if (m.includes('haiku-4-5')) return 'Claude Haiku 4.5';
   if (m.includes('3-5-haiku')) return 'Claude 3.5 Haiku';
   if (m.includes('gemini-3.0')) return 'Gemini 3.0 Flash';
   if (m.includes('gemini-2.5-pro')) return 'Gemini 2.5 Pro';
